@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bayadrent-postgres
+    restart: unless-stopped
+    ports:
+      - '5433:5432'
+    environment:
+      POSTGRES_USER: bayadrent
+      POSTGRES_PASSWORD: bayadrent
+      POSTGRES_DB: bayadrent
+    volumes:
+      - bayadrent_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bayadrent -d bayadrent']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: bayadrent-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - bayadrent_redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: bayadrent-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    environment:
+      MINIO_ROOT_USER: bayadrent
+      MINIO_ROOT_PASSWORD: bayadrent_secret
+    volumes:
+      - bayadrent_minio:/data
+
+volumes:
+  bayadrent_pg:
+  bayadrent_redis:
+  bayadrent_minio:

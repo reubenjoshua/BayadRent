@@ -1,0 +1,12 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+shamefullyHoist: true
+autoInstallPeers: true
+
+allowBuilds:
+  bcrypt: true
+  esbuild: true
+  msgpackr-extract: true
+  "@scarf/scarf": true
