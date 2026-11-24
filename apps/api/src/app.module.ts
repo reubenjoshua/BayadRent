@@ -10,6 +10,7 @@ import { PropertyModule } from './property/property.module';
 import { BillingModule } from './billing/billing.module';
 import { PaymentModule } from './payment/payment.module';
 import { NotifyModule } from './notify/notify.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { NotifyModule } from './notify/notify.module';
         limit: 120,
       },
     ]),
+    StorageModule,
     DbModule,
     AuditModule,
     AuthModule,

@@ -1,16 +1,20 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '@bayadrent/shared-types';
 import * as bcrypt from 'bcrypt';
-import { eq } from 'drizzle-orm';
+import { createHash, randomBytes } from 'crypto';
+import { and, eq, gt, isNotNull } from 'drizzle-orm';
 import { DATABASE } from '../db/db.constants';
 import type { Database } from '../db';
 import { users } from '../db/schema';
+import { MailService } from '../notify/mail.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import type { AuthUser, JwtPayload } from './types';
@@ -20,6 +24,8 @@ export class AuthService {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     private readonly jwt: JwtService,
+    private readonly mail: MailService,
+    private readonly config: ConfigService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -84,6 +90,7 @@ export class AuthService {
         phone: true,
         emergencyContactName: true,
         emergencyContactPhone: true,
+        emailRemindersEnabled: true,
       },
     });
 
@@ -101,6 +108,7 @@ export class AuthService {
       phone?: string;
       emergencyContactName?: string;
       emergencyContactPhone?: string;
+      emailRemindersEnabled?: boolean;
     },
   ): Promise<AuthUser> {
     const existing = await this.getProfile(userId);
@@ -118,11 +126,85 @@ export class AuthService {
           dto.emergencyContactPhone !== undefined
             ? dto.emergencyContactPhone.trim() || null
             : existing.emergencyContactPhone,
+        emailRemindersEnabled:
+          dto.emailRemindersEnabled !== undefined
+            ? dto.emailRemindersEnabled
+            : (existing.emailRemindersEnabled ?? true),
         updatedAt: new Date(),
       })
       .where(eq(users.id, userId));
 
     return this.getProfile(userId);
+  }
+
+  /** Always returns the same shape so emails can't be enumerated. */
+  async forgotPassword(email: string) {
+    const user = await this.db.query.users.findFirst({
+      where: eq(users.email, email.toLowerCase()),
+    });
+
+    if (user) {
+      const token = randomBytes(32).toString('hex');
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+      await this.db
+        .update(users)
+        .set({
+          passwordResetTokenHash: tokenHash,
+          passwordResetExpiresAt: expiresAt,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, user.id));
+
+      const webOrigin = this.config.get<string>('WEB_ORIGIN') ?? 'http://localhost:3000';
+      const resetUrl = `${webOrigin.replace(/\/$/, '')}/reset-password?token=${token}`;
+
+      await this.mail.send(
+        user.email,
+        '[BayadRent] Reset your password',
+        `Hi ${user.fullName},\n\nReset your password using this link (valid for 1 hour):\n${resetUrl}\n\nIf you didn't ask for this, you can ignore this email.\n\n— BayadRent`,
+        `<div style="font-family:Georgia,serif;color:#171c1a;line-height:1.5">
+          <p>Hi ${user.fullName},</p>
+          <p><a href="${resetUrl}" style="color:#115e49;font-weight:600">Reset your password</a> — link expires in 1 hour.</p>
+          <p style="color:#5f6b65;font-size:0.9rem">If you didn't ask for this, ignore this email.</p>
+          <p style="color:#5f6b65;font-size:0.9rem">— BayadRent</p>
+        </div>`,
+      );
+    }
+
+    return {
+      ok: true,
+      message: 'If that email is registered, a reset link has been sent.',
+    };
+  }
+
+  async resetPassword(token: string, password: string) {
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const user = await this.db.query.users.findFirst({
+      where: and(
+        eq(users.passwordResetTokenHash, tokenHash),
+        isNotNull(users.passwordResetExpiresAt),
+        gt(users.passwordResetExpiresAt, new Date()),
+      ),
+    });
+
+    if (!user) {
+      throw new BadRequestException('Reset link is invalid or expired');
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    await this.db
+      .update(users)
+      .set({
+        passwordHash,
+        passwordResetTokenHash: null,
+        passwordResetExpiresAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, user.id));
+
+    return { ok: true, message: 'Password updated. You can sign in now.' };
   }
 
   private toAuthResponse(user: {

@@ -21,6 +21,7 @@ import {
   type TrackerInvoice,
   type TrackerResponse,
 } from '@/lib/api';
+import { AppShell } from '@/components/app-shell';
 import { BrandMark } from '@/components/brand-mark';
 import { Celebrate, type CelebratePayload } from '@/components/celebrate';
 import { ConfirmDialog } from '@/components/confirm-dialog';
@@ -39,6 +40,14 @@ type TrackerFilter = 'ALL' | 'DUE' | 'OVERDUE' | 'PENDING' | 'PARTIAL' | 'PAID' 
 type LeaseForm = { renterEmail: string; rentAmount: string; dueDay: string };
 type AmendForm = { rentAmount: string; dueDay: string };
 type PropertySection = 'utilities' | 'gcash' | 'units';
+
+const pageTitles: Record<Tab, string> = {
+  tracker: 'Collection board',
+  proofs: 'Payment proofs',
+  properties: 'Properties',
+  inbox: 'Inbox',
+  activity: 'Activity',
+};
 
 function AccordionSection({
   title,
@@ -81,14 +90,6 @@ type ConfirmState =
   | { kind: 'endLease'; unitId: string; label: string }
   | { kind: 'waive'; invoiceId: string; label: string }
   | null;
-
-const tabs: { key: Tab; label: string }[] = [
-  { key: 'tracker', label: 'Tracker' },
-  { key: 'proofs', label: 'Proofs' },
-  { key: 'properties', label: 'Properties' },
-  { key: 'inbox', label: 'Inbox' },
-  { key: 'activity', label: 'Activity' },
-];
 
 const trackerFilters: { key: TrackerFilter; label: string }[] = [
   { key: 'ALL', label: 'All' },
@@ -848,7 +849,7 @@ export default function LandlordPage() {
     setActionKey(`receipt-${item.id}`);
     try {
       await api.downloadReceipt(token, item.id);
-      toast('Receipt downloaded.', 'success');
+      toast('Receipt opened — use Print / Save PDF.', 'success');
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Receipt download failed', 'error');
     } finally {
@@ -1001,19 +1002,49 @@ export default function LandlordPage() {
     );
   }
 
-  return (
-    <main className="page">
-      <div className="shell fade-up">
-        <div className="topbar">
-          <div>
-            <BrandMark />
-            <p className="eyebrow mt-4">Landlord workspace</p>
-            <h1 className="mt-2 text-4xl md:text-5xl">Collection board</h1>
-            <p className="lead mt-3">Signed in as {user.fullName} · {user.email}</p>
-          </div>
-          <button type="button" onClick={logout} className="btn btn-ghost">Log out</button>
-        </div>
+  const unreadInbox = inbox.filter((item) => !item.readAt).length;
 
+  return (
+    <>
+      <AppShell
+        roleLabel="Landlord workspace"
+        title={pageTitles[activeTab]}
+        subtitle={`Signed in as ${user.fullName} · ${user.email}`}
+        activeKey={activeTab}
+        onNavigate={(key) => setActiveTab(key as Tab)}
+        onLogout={logout}
+        groups={[
+          {
+            label: 'Overview',
+            items: [{ key: 'tracker', label: 'Tracker' }],
+          },
+          {
+            label: 'Money',
+            items: [
+              {
+                key: 'proofs',
+                label: 'Proofs',
+                badge: pendingPayments.length || undefined,
+              },
+              { key: 'activity', label: 'Activity' },
+            ],
+          },
+          {
+            label: 'Setup',
+            items: [{ key: 'properties', label: 'Properties' }],
+          },
+          {
+            label: 'Comms',
+            items: [
+              {
+                key: 'inbox',
+                label: 'Inbox',
+                badge: unreadInbox || undefined,
+              },
+            ],
+          },
+        ]}
+      >
         {error ? <p className="error-text mb-4">{error}</p> : null}
         {!hasInvoices ? (
           <div className="mb-5">
@@ -1030,21 +1061,6 @@ export default function LandlordPage() {
           </div>
         ) : null}
 
-        <nav className="tab-row" aria-label="Landlord dashboard">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              className={`tab-btn ${activeTab === tab.key ? 'is-active' : ''}`}
-              onClick={() => setActiveTab(tab.key)}
-            >
-              {tab.label}
-              {tab.key === 'proofs' && pendingPayments.length ? ` (${pendingPayments.length})` : ''}
-              {tab.key === 'inbox' && inbox.some((item) => !item.readAt) ? ` (${inbox.filter((item) => !item.readAt).length})` : ''}
-            </button>
-          ))}
-        </nav>
-
         {(activeTab === 'tracker' || activeTab === 'properties') ? (
           <div className="search-bar">
             <input
@@ -1059,6 +1075,37 @@ export default function LandlordPage() {
         ) : null}
 
         {activeTab === 'tracker' ? (
+          <>
+          <div className="overview-grid">
+            {[
+              {
+                label: 'Overdue',
+                value: String(tracker?.summary.overdue ?? 0),
+                hint: 'Need follow-up',
+              },
+              {
+                label: 'Due',
+                value: String(tracker?.summary.due ?? 0),
+                hint: 'Open this cycle',
+              },
+              {
+                label: 'Pending proofs',
+                value: String(pendingPayments.length),
+                hint: 'Awaiting review',
+              },
+              {
+                label: 'Paid',
+                value: String(tracker?.summary.paid ?? 0),
+                hint: 'Confirmed this view',
+              },
+            ].map((card) => (
+              <article key={card.label} className="overview-card">
+                <p className="eyebrow">{card.label}</p>
+                <p className="overview-value mono">{card.value}</p>
+                <p className="overview-hint">{card.hint}</p>
+              </article>
+            ))}
+          </div>
           <section className="panel" ref={trackerRef}>
             <div className="section-head">
               <div><p className="eyebrow">Primary</p><h2 className="section-title">Payment tracker</h2></div>
@@ -1198,6 +1245,7 @@ export default function LandlordPage() {
               </>
             ) : <p className="empty-copy">Loading tracker…</p>}
           </section>
+          </>
         ) : null}
 
         {activeTab === 'proofs' ? (
@@ -1564,7 +1612,32 @@ export default function LandlordPage() {
                                   <label className="field md:col-span-2"><span>Renter email</span><input className="input" type="email" value={leaseForm.renterEmail} onChange={(event) => setLeaseForms((previous) => ({ ...previous, [unit.id]: { ...leaseForm, renterEmail: event.target.value } }))} placeholder="renter@email.com" /></label>
                                   <label className="field"><span>Rent (PHP)</span><input className="input" type="number" min={1} value={leaseForm.rentAmount} onChange={(event) => setLeaseForms((previous) => ({ ...previous, [unit.id]: { ...leaseForm, rentAmount: event.target.value } }))} /></label>
                                   <label className="field"><span>Due day</span><input className="input" type="number" min={1} max={28} value={leaseForm.dueDay} onChange={(event) => setLeaseForms((previous) => ({ ...previous, [unit.id]: { ...leaseForm, dueDay: event.target.value } }))} /></label>
-                                  <button type="button" disabled={Boolean(actionKey)} onClick={() => onCreateLease(unit.id)} className="btn btn-primary md:col-span-4 md:w-fit">{busy(`lease-${unit.id}`) ? 'Assigning…' : 'Assign renter'}</button>
+                                  <div className="md:col-span-4 flex flex-wrap gap-2">
+                                    <button type="button" disabled={Boolean(actionKey)} onClick={() => onCreateLease(unit.id)} className="btn btn-primary">{busy(`lease-${unit.id}`) ? 'Assigning…' : 'Assign renter'}</button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-ghost"
+                                      onClick={async () => {
+                                        const email = leaseForm.renterEmail.trim();
+                                        const params = new URLSearchParams({ role: 'RENTER' });
+                                        if (email) params.set('email', email);
+                                        const link = `${window.location.origin}/register?${params.toString()}`;
+                                        try {
+                                          await navigator.clipboard.writeText(link);
+                                          toast(
+                                            email
+                                              ? 'Invite link copied — send it to your renter.'
+                                              : 'Generic renter signup link copied.',
+                                            'success',
+                                          );
+                                        } catch {
+                                          toast('Could not copy link', 'error');
+                                        }
+                                      }}
+                                    >
+                                      Copy invite link
+                                    </button>
+                                  </div>
                                 </div>
                               )}
 
@@ -1650,7 +1723,7 @@ export default function LandlordPage() {
         ) : null}
 
         <p className="mt-10 text-sm text-[var(--muted)]"><Link href="/" className="nav-link">Back home</Link></p>
-      </div>
+      </AppShell>
 
       <ConfirmDialog
         open={Boolean(confirm)}
@@ -1686,6 +1759,6 @@ export default function LandlordPage() {
           onReject={() => setConfirm({ kind: 'reject', paymentId: proofPayment.id, label: `${proofPayment.renter.fullName} · ${formatPhp(proofPayment.amount)}` })}
         />
       ) : null}
-    </main>
+    </>
   );
 }

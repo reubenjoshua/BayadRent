@@ -16,6 +16,12 @@ import { DATABASE } from '../db/db.constants';
 import type { Database } from '../db';
 import { invoices, leases, payments, properties, units } from '../db/schema';
 import { NotifyService } from '../notify/notify.service';
+import { ObjectStorageService } from '../storage/object-storage.service';
+import {
+  isS3Path,
+  persistUploadedFile,
+  s3KeyFromPath,
+} from '../storage/upload-persist';
 import { UPLOAD_DIR } from './payment-storage';
 
 @Injectable()
@@ -24,6 +30,7 @@ export class PaymentService {
     @Inject(DATABASE) private readonly db: Database,
     private readonly notify: NotifyService,
     private readonly audit: AuditService,
+    private readonly storage: ObjectStorageService,
   ) {}
 
   async submitProof(
@@ -59,6 +66,11 @@ export class PaymentService {
       throw new ConflictException('A payment is already awaiting landlord review');
     }
 
+    let proofPath: string | null = null;
+    if (input.file) {
+      proofPath = await persistUploadedFile(this.storage, input.file, 'proofs');
+    }
+
     const [payment] = await this.db
       .insert(payments)
       .values({
@@ -66,7 +78,7 @@ export class PaymentService {
         amount: invoice.amount,
         status: PaymentStatus.PENDING_REVIEW,
         note: input.note?.trim() || null,
-        proofPath: input.file?.filename ?? null,
+        proofPath,
         proofOriginalName: input.file?.originalname ?? null,
         proofMimeType: input.file?.mimetype ?? null,
         submittedBy: renterId,
@@ -233,6 +245,21 @@ export class PaymentService {
     }
     if (!payment.proofPath) {
       throw new NotFoundException('No proof uploaded for this payment');
+    }
+
+    if (isS3Path(payment.proofPath)) {
+      try {
+        const { stream, contentType } = await this.storage.getObjectStream(
+          s3KeyFromPath(payment.proofPath),
+        );
+        return {
+          file: new StreamableFile(stream),
+          mimeType: payment.proofMimeType ?? contentType ?? 'application/octet-stream',
+          filename: payment.proofOriginalName ?? s3KeyFromPath(payment.proofPath),
+        };
+      } catch {
+        throw new NotFoundException('Proof file missing on storage');
+      }
     }
 
     const fullPath = join(UPLOAD_DIR, payment.proofPath);

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppShell } from '@/components/app-shell';
 import { BrandMark } from '@/components/brand-mark';
 import { Celebrate, type CelebratePayload } from '@/components/celebrate';
 import { EmptyGuide } from '@/components/empty-guide';
@@ -25,11 +26,11 @@ import { statusClass } from '@/lib/status';
 
 type RenterTab = 'invoices' | 'calendar' | 'profile';
 
-const tabs: { key: RenterTab; label: string }[] = [
-  { key: 'invoices', label: 'Invoices' },
-  { key: 'calendar', label: 'Calendar' },
-  { key: 'profile', label: 'Profile' },
-];
+const pageTitles: Record<RenterTab, string> = {
+  invoices: "What's due",
+  calendar: 'Payment calendar',
+  profile: 'Profile',
+};
 
 function formatPhp(amount: number) {
   return new Intl.NumberFormat('en-PH', {
@@ -118,6 +119,7 @@ export default function RenterPage() {
     phone: '',
     emergencyContactName: '',
     emergencyContactPhone: '',
+    emailRemindersEnabled: true,
   });
 
   const refresh = useCallback(async (authToken: string) => {
@@ -163,6 +165,7 @@ export default function RenterPage() {
           phone: profile.phone ?? '',
           emergencyContactName: profile.emergencyContactName ?? '',
           emergencyContactPhone: profile.emergencyContactPhone ?? '',
+          emailRemindersEnabled: profile.emailRemindersEnabled !== false,
         });
       })
       .catch(() => {
@@ -230,6 +233,7 @@ export default function RenterPage() {
         phone: profileForm.phone,
         emergencyContactName: profileForm.emergencyContactName,
         emergencyContactPhone: profileForm.emergencyContactPhone,
+        emailRemindersEnabled: profileForm.emailRemindersEnabled,
       });
       setUser(updated);
       saveSession(token, updated);
@@ -336,25 +340,31 @@ export default function RenterPage() {
   }
 
   return (
-    <main className="page">
-      <div className="shell fade-up">
-        <div className="topbar">
-          <div>
-            <BrandMark />
-            <p className="eyebrow mt-4">Renter</p>
-            <h1 className="mt-2 text-4xl md:text-5xl">What&apos;s due</h1>
-            <p className="lead mt-3">
-              Signed in as {user.fullName} · {user.email}
-            </p>
-          </div>
-          <button type="button" onClick={logout} className="btn btn-ghost">
-            Log out
-          </button>
-        </div>
-
+    <>
+      <AppShell
+        roleLabel="Renter"
+        title={pageTitles[activeTab]}
+        subtitle={`Signed in as ${user.fullName} · ${user.email}`}
+        activeKey={activeTab}
+        onNavigate={(key) => setActiveTab(key as RenterTab)}
+        onLogout={logout}
+        groups={[
+          {
+            label: 'Billing',
+            items: [
+              { key: 'invoices', label: 'Invoices' },
+              { key: 'calendar', label: 'Calendar' },
+            ],
+          },
+          {
+            label: 'Account',
+            items: [{ key: 'profile', label: 'Profile' }],
+          },
+        ]}
+      >
         {error ? <p className="error-text mb-4">{error}</p> : null}
 
-        {hasInvoices ? (
+        {hasInvoices && activeTab === 'invoices' ? (
           <div className="summary-hero">
             <p className="eyebrow">This cycle</p>
             {nextDue ? (
@@ -417,19 +427,6 @@ export default function RenterPage() {
           </div>
         ) : null}
 
-        <nav className="tab-row" aria-label="Renter dashboard">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              className={`tab-btn ${activeTab === tab.key ? 'is-active' : ''}`}
-              onClick={() => setActiveTab(tab.key)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-
         {activeTab === 'invoices' ? (
           <div className="dashboard-grid">
             <section className="panel" ref={invoicesRef}>
@@ -485,7 +482,7 @@ export default function RenterPage() {
                               if (!token) return;
                               try {
                                 await api.downloadReceipt(token, invoice.id);
-                                toast('Receipt downloaded.', 'success');
+                                toast('Receipt opened — use Print / Save PDF.', 'success');
                               } catch (err) {
                                 toast(
                                   err instanceof Error ? err.message : 'Receipt failed',
@@ -747,6 +744,24 @@ export default function RenterPage() {
                     placeholder="09xxxxxxxxx"
                   />
                 </label>
+                <label className="pref-toggle md:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={profileForm.emailRemindersEnabled}
+                    onChange={(e) =>
+                      setProfileForm((prev) => ({
+                        ...prev,
+                        emailRemindersEnabled: e.target.checked,
+                      }))
+                    }
+                  />
+                  <span>
+                    <strong>Email reminders</strong>
+                    <span className="pref-toggle-hint">
+                      Due-date and payment emails when SMTP is configured
+                    </span>
+                  </span>
+                </label>
                 <button
                   type="submit"
                   disabled={Boolean(actionKey)}
@@ -805,9 +820,9 @@ export default function RenterPage() {
             Back home
           </Link>
         </p>
-      </div>
+      </AppShell>
 
       <Celebrate payload={celebrate} onDone={() => setCelebrate(null)} />
-    </main>
+    </>
   );
 }

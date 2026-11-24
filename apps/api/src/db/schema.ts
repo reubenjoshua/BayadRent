@@ -49,6 +49,9 @@ export const users = pgTable('users', {
   phone: varchar('phone', { length: 40 }),
   emergencyContactName: varchar('emergency_contact_name', { length: 255 }),
   emergencyContactPhone: varchar('emergency_contact_phone', { length: 40 }),
+  emailRemindersEnabled: boolean('email_reminders_enabled').notNull().default(true),
+  passwordResetTokenHash: varchar('password_reset_token_hash', { length: 255 }),
+  passwordResetExpiresAt: timestamp('password_reset_expires_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

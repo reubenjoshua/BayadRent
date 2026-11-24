@@ -14,4 +14,5 @@ export type AuthUser = {
   phone?: string | null;
   emergencyContactName?: string | null;
   emergencyContactPhone?: string | null;
+  emailRemindersEnabled?: boolean;
 };

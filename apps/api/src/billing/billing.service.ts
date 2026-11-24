@@ -610,12 +610,19 @@ export class BillingService {
     const html = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/><title>BayadRent Receipt</title>
 <style>
-  body{font-family:Georgia,serif;max-width:560px;margin:40px auto;color:#171c1a;line-height:1.5}
+  body{font-family:Georgia,serif;max-width:560px;margin:40px auto;color:#171c1a;background:#fff;line-height:1.5}
   h1{font-size:1.6rem;margin:0 0 0.25rem} .muted{color:#5f6b65;font-size:0.85rem}
   table{width:100%;border-collapse:collapse;margin-top:1.25rem}
   td{padding:0.5rem 0;border-bottom:1px solid #d5dbd7;vertical-align:top}
   td:last-child{text-align:right;font-family:ui-monospace,monospace;white-space:nowrap}
   .total td{font-weight:700;border-bottom:0;padding-top:0.85rem}
+  .print-actions{margin:1.25rem 0 0;display:flex;gap:0.75rem}
+  .print-actions button{font:inherit;padding:0.45rem 0.9rem;border:1px solid #d5dbd7;background:#fff;border-radius:8px;cursor:pointer;color:#171c1a}
+  @media print{
+    body{margin:0;max-width:none;color:#000;background:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .print-actions{display:none!important}
+    a{color:#000;text-decoration:none}
+  }
 </style></head><body>
   <h1>BayadRent</h1>
   <p class="muted">Official payment receipt</p>
@@ -631,6 +638,7 @@ export class BillingService {
     <tr class="total"><td>Total paid</td><td>${money(billTotal)}</td></tr>
   </table>
   <p class="muted" style="margin-top:1.5rem">Invoice ${invoice.id}<br/>Generated for ${role === 'LANDLORD' ? 'landlord' : 'renter'} · ${new Date().toISOString()}</p>
+  <div class="print-actions"><button type="button" onclick="window.print()">Print / Save PDF</button></div>
 </body></html>`;
 
     return {

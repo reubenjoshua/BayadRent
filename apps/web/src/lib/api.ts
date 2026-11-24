@@ -8,6 +8,7 @@ export type AuthUser = {
   phone?: string | null;
   emergencyContactName?: string | null;
   emergencyContactPhone?: string | null;
+  emailRemindersEnabled?: boolean;
 };
 
 export type InvoiceLineItem = {
@@ -233,6 +234,18 @@ export const api = {
       body: JSON.stringify(body),
     });
   },
+  forgotPassword(email: string) {
+    return request<{ ok: boolean; message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+  resetPassword(token: string, password: string) {
+    return request<{ ok: boolean; message: string }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    });
+  },
   me(token: string) {
     return request<AuthUser>('/auth/me', { token });
   },
@@ -243,6 +256,7 @@ export const api = {
       phone?: string;
       emergencyContactName?: string;
       emergencyContactPhone?: string;
+      emailRemindersEnabled?: boolean;
     },
   ) {
     return request<AuthUser>('/auth/me', {
@@ -447,11 +461,16 @@ export const api = {
     const match = disposition.match(/filename="([^"]+)"/);
     const filename = match?.[1] ?? `bayadrent-receipt-${invoiceId}.html`;
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    }
   },
   listAudit(token: string) {
     return request<AuditEvent[]>('/audit/me', { token });

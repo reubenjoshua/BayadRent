@@ -17,6 +17,12 @@ import { DATABASE } from '../db/db.constants';
 import type { Database } from '../db';
 import { leases, properties, propertyUtilityTypes, units, users } from '../db/schema';
 import { GCASH_QR_DIR } from '../payment/payment-storage';
+import { ObjectStorageService } from '../storage/object-storage.service';
+import {
+  isS3Path,
+  persistUploadedFile,
+  s3KeyFromPath,
+} from '../storage/upload-persist';
 import { CreateLeaseDto } from './dto/create-lease.dto';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { CreateUnitDto } from './dto/create-unit.dto';
@@ -30,6 +36,7 @@ export class PropertyService {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     private readonly audit: AuditService,
+    private readonly storage: ObjectStorageService,
   ) {}
 
   async createProperty(landlordId: string, dto: CreatePropertyDto) {
@@ -436,6 +443,11 @@ export class PropertyService {
   ) {
     const property = await this.requireOwnedProperty(landlordId, propertyId);
 
+    let gcashQrPath = property.gcashQrPath;
+    if (file) {
+      gcashQrPath = await persistUploadedFile(this.storage, file, 'gcash-qr');
+    }
+
     const [updated] = await this.db
       .update(properties)
       .set({
@@ -447,7 +459,7 @@ export class PropertyService {
           dto.gcashMobileNumber !== undefined
             ? dto.gcashMobileNumber.trim() || null
             : property.gcashMobileNumber,
-        gcashQrPath: file ? file.filename : property.gcashQrPath,
+        gcashQrPath,
         gcashQrOriginalName: file ? file.originalname : property.gcashQrOriginalName,
         gcashQrMimeType: file ? file.mimetype : property.gcashQrMimeType,
         updatedAt: new Date(),
@@ -501,6 +513,21 @@ export class PropertyService {
 
     if (!isLandlord && !isRenter) {
       throw new ForbiddenException('You cannot view this GCash QR');
+    }
+
+    if (isS3Path(property.gcashQrPath)) {
+      try {
+        const { stream, contentType } = await this.storage.getObjectStream(
+          s3KeyFromPath(property.gcashQrPath),
+        );
+        return {
+          file: new StreamableFile(stream),
+          mimeType: property.gcashQrMimeType ?? contentType ?? 'image/png',
+          filename: property.gcashQrOriginalName ?? s3KeyFromPath(property.gcashQrPath),
+        };
+      } catch {
+        throw new NotFoundException('GCash QR file missing on storage');
+      }
     }
 
     const fullPath = join(GCASH_QR_DIR, property.gcashQrPath);

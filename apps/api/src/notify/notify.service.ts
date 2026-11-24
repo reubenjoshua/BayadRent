@@ -290,9 +290,9 @@ export class NotifyService implements OnModuleInit, OnModuleDestroy {
 
     const user = await this.db.query.users.findFirst({
       where: eq(users.id, input.userId),
-      columns: { email: true, fullName: true },
+      columns: { email: true, fullName: true, emailRemindersEnabled: true },
     });
-    if (user?.email) {
+    if (user?.email && user.emailRemindersEnabled !== false) {
       try {
         const result = await this.mail.send(
           user.email,
