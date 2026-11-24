@@ -31,40 +31,56 @@ export class NotifyService implements OnModuleInit, OnModuleDestroy {
     private readonly mail: MailService,
   ) {}
 
-  async onModuleInit() {
-    this.connection = createRedisConnection(this.config);
-    this.queue = new Queue<ReminderJobData>(QUEUE_NAME, {
-      connection: this.connection,
-    });
+  onModuleInit() {
+    // Start Redis/BullMQ in the background so HTTP can bind immediately
+    // (Render fails deploy if the process never opens a port).
+    void this.startReminderQueue();
+  }
 
-    this.worker = new Worker<ReminderJobData>(
-      QUEUE_NAME,
-      async (job) => this.processReminders(job),
-      { connection: this.connection.duplicate() },
-    );
+  private async startReminderQueue() {
+    try {
+      this.connection = createRedisConnection(this.config);
+      this.queue = new Queue<ReminderJobData>(QUEUE_NAME, {
+        connection: this.connection,
+      });
 
-    this.worker.on('failed', (job, err) => {
-      this.logger.error(`Reminder job ${job?.id} failed: ${err.message}`);
-    });
+      this.worker = new Worker<ReminderJobData>(
+        QUEUE_NAME,
+        async (job) => this.processReminders(job),
+        { connection: this.connection.duplicate() },
+      );
 
-    await this.queue.add(
-      JOB_NAME,
-      { triggeredBy: 'scheduler' },
-      {
-        repeat: { every: 6 * 60 * 60 * 1000 },
-        jobId: 'scheduled-reminders',
-        removeOnComplete: 20,
-        removeOnFail: 50,
-      },
-    );
+      this.worker.on('failed', (job, err) => {
+        this.logger.error(`Reminder job ${job?.id} failed: ${err.message}`);
+      });
 
-    this.logger.log('Reminder queue worker started (every 6 hours)');
+      await this.queue.add(
+        JOB_NAME,
+        { triggeredBy: 'scheduler' },
+        {
+          repeat: { every: 6 * 60 * 60 * 1000 },
+          jobId: 'scheduled-reminders',
+          removeOnComplete: 20,
+          removeOnFail: 50,
+        },
+      );
+
+      this.logger.log('Reminder queue worker started (every 6 hours)');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Reminder queue failed to start: ${message}`);
+    }
   }
 
   async onModuleDestroy() {
-    await this.worker?.close();
-    await this.queue?.close();
-    await this.connection?.quit();
+    try {
+      await this.worker?.close();
+      await this.queue?.close();
+      await this.connection?.quit();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Reminder queue shutdown: ${message}`);
+    }
   }
 
   async enqueueReminders(

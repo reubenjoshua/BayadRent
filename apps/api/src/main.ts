@@ -45,7 +45,12 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, document);
 
   const port = Number(process.env.PORT ?? 4000);
-  await app.listen(port);
+  // Bind all interfaces so hosts like Render can detect the open port.
+  await app.listen(port, '0.0.0.0');
+  console.log(`BayadRent API listening on 0.0.0.0:${port}`);
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('API failed to start', err);
+  process.exit(1);
+});
